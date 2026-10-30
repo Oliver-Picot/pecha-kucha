@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Transition preview — Mask / Offset / Zoom</title>
+<style>
+  :root{
+    --ink:#1a1a1a;
+    --void:#000000;
+    --c0:#ff5d5d; /* hello */
+    --c1:#ffc53d; /* oxford */
+    --panel-w: 66.6667vw;
+    --void-w: 33.3333vw;
+    --display: ui-rounded, "SF Pro Rounded", "Segoe UI", system-ui, -apple-system, sans-serif;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+  }
+  *{ box-sizing:border-box; cursor:none; }
+  html, body{ margin:0; padding:0; height:100%; overflow:hidden; background:#000000; color:var(--ink); font-family:var(--sans); }
+
+  /* ---- intro ---- */
+  #intro{
+    position:fixed; inset:0; z-index:100; display:flex; flex-direction:column;
+    align-items:center; justify-content:center; gap:18px; background:#000000;
+    color:#fff; text-align:center; padding:24px;
+  }
+  #intro.hidden{ display:none; }
+  #intro h1{ font-family:var(--display); font-size:clamp(1.2rem,4vw,1.9rem); margin:0; }
+  #intro p{ color:#aaa; margin:0; font-size:0.88rem; max-width:480px; }
+  #playBtn{
+    appearance:none; border:none; background:var(--c1); color:var(--ink);
+    font-family:var(--display); font-weight:800; font-size:1.05rem;
+    padding:15px 40px; border-radius:999px; box-shadow:0 6px 0 #c98f1f;
+    transition: transform 120ms ease, box-shadow 120ms ease;
+  }
+  #playBtn:active{ transform:translateY(4px); box-shadow:0 2px 0 #c98f1f; }
+  #replayBtn{ background:none; border:1px solid #444; color:#aaa; padding:8px 18px; border-radius:999px; font-size:0.8rem; }
+
+  /* ---- void sidebar (right third, permanent) ---- */
+  #void-panel{
+    position:fixed; top:0; right:0; width:var(--void-w); height:100%; z-index:3;
+    background:var(--void); border-left:2px solid #000;
+  }
+  .resting-dot{
+    position:absolute; top:50%; left:50%; width:40px; height:40px; margin:-20px 0 0 -20px;
+    border-radius:50%; border:3px solid rgba(255,255,255,0.25);
+    transition: opacity 200ms ease;
+  }
+
+  /* ---- stage ---- */
+  #stage{ position:fixed; inset:0; overflow:hidden; z-index:5; }
+  .slide{
+    position:fixed; top:0; left:0; width:var(--panel-w); height:100%;
+    display:none; align-items:center; justify-content:center; overflow:hidden; will-change: clip-path;
+  }
+  .slide.active{ display:flex; clip-path: circle(150vmax at 50% 50%); }
+  #s0{ background:var(--c0); } #s1{ background:var(--c1); }
+
+  .content > *{ opacity:0; transform:translateY(18px); transition: opacity 320ms ease, transform 320ms ease; }
+  .content.in > *{ opacity:1; transform:translateY(0); }
+  .content > .seed-pill{ transition-delay:0ms; }
+  .content > .photo-slot{ transition-delay:120ms; }
+  .content > .headline{ transition-delay:240ms; }
+  .content > .doodle-layer{ transition-delay:360ms; }
+
+  .seed-pill{
+    width:54px; height:10px; border-radius:999px; background:var(--ink); margin-bottom:8px;
+    transform-origin:center; z-index:5;
+  }
+  .slide.dark .seed-pill{ background:#fff; }
+
+  .headline{
+    font-family:var(--display); font-weight:900; font-size:clamp(2.4rem,8.5vw,5.6rem);
+    margin:0; text-align:center; line-height:0.9; letter-spacing:-0.02em; z-index:5; width:100%; padding:0 3vw;
+  }
+  .slide.light .headline{ color:var(--ink); -webkit-text-stroke:3px var(--ink); paint-order:stroke fill; }
+  .slide.dark .headline{ color:#fff; -webkit-text-stroke:3px var(--ink); paint-order:stroke fill; }
+  #s0 .headline{ transform:rotate(-3deg); } #s1 .headline{ transform:rotate(2deg); }
+
+  .doodle-layer{ position:absolute; inset:0; pointer-events:none; }
+
+  /* ---- chrome (kept): progress / counter / pause / shortcuts ---- */
+  .progress-track{ position:fixed; top:0; left:0; right:0; height:10px; z-index:60; background:rgba(255,255,255,0.55); border-bottom:2px solid var(--ink); }
+  .progress-fill{ position:absolute; top:0; left:0; bottom:0; width:0%; background:var(--ink); }
+  .progress-ball{
+    position:fixed; top:14px; left:0; z-index:61; width:18px; height:18px; border-radius:50%;
+    background: radial-gradient(circle at 35% 30%, #e4ff7a, #c6f135 60%, #8fab1f 100%);
+    border:2px solid var(--ink); transform:translateX(-50%) rotate(0deg);
+  }
+  .progress-ball::before, .progress-ball::after{ content:""; position:absolute; inset:0; border-radius:50%; border:1.5px solid rgba(26,26,26,0.5); clip-path:inset(40% 0 40% 0); }
+  .progress-ball::after{ transform:rotate(90deg); }
+  .counter{ position:fixed; top:18px; right:22px; z-index:60; font-weight:700; font-size:0.8rem; background:#fff; padding:5px 12px; border-radius:999px; border:2px solid var(--ink); }
+  .pause-badge{
+    position:fixed; top:18px; left:22px; z-index:60; font-size:0.72rem; letter-spacing:0.08em; text-transform:uppercase;
+    color:#fff; background:var(--ink); padding:5px 12px; border-radius:999px; opacity:0; transform:translateY(-6px);
+    transition:opacity 180ms ease, transform 180ms ease; pointer-events:none;
+  }
+  body.is-paused .pause-badge{ opacity:1; transform:translateY(0); }
+  .shortcut-hint{
+    position:fixed; bottom:18px; left:22px; z-index:60; font-size:0.68rem; color:#fff; opacity:0.55;
+    background:rgba(0,0,0,0.4); padding:5px 10px; border-radius:999px;
+  }
+
+  /* ---- traveling dot (crosses from the void into the panel) ---- */
+  #travel-layer{ position:fixed; inset:0; z-index:50; pointer-events:none; }
+  #pan-layer{ position:fixed; inset:0; z-index:51; pointer-events:none; }
+  .travel-dot{
+    position:fixed; top:50%; width:40px; height:40px; margin-top:-20px;
+    border-radius:50%; z-index:50;
+  }
+
+  /* ---- photo placeholder (reused) ---- */
+  .photo-slot{ position:absolute; z-index:6; }
+  .photo{ width:130px; background:#fff; padding:8px 8px 22px; border-radius:4px; box-shadow:0 14px 28px rgba(0,0,0,0.28); }
+  .photo-pic{ position:relative; width:100%; aspect-ratio:1/1; overflow:hidden; border-radius:2px; background: repeating-linear-gradient(45deg,#dcdcdc,#dcdcdc 9px,#ececec 9px,#ececec 18px); }
+  .photo-pic img{ position:absolute; inset:0; width:100%; height:100%; object-fit:cover; z-index:2; }
+  .pic-sun{ position:absolute; width:20px; height:20px; border-radius:50%; background:#ffd23d; border:3px solid var(--ink); top:10px; right:12px; z-index:1; }
+  .pic-hill{ position:absolute; width:0; height:0; z-index:1; border-left:34px solid transparent; border-right:34px solid transparent; border-bottom:28px solid #8fab1f; bottom:-2px; left:8px; }
+  .photo-label{ position:absolute; bottom:5px; left:0; right:0; text-align:center; font-size:0.6rem; color:#777; }
+
+  /* ---- doodles (reused: bubble for s0, bike for s1) ---- */
+  @keyframes float{ 0%,100%{ transform:translateY(0) rotate(0deg);} 50%{ transform:translateY(-14px) rotate(12deg);} }
+  @keyframes spin{ to{ transform:rotate(360deg);} }
+  .doodle-star{ position:absolute; font-size:2rem; color:#fff; -webkit-text-stroke:1.5px var(--ink); animation: float 4s ease-in-out infinite; }
+
+  .bubble{
+    position:absolute; top:9%; left:50%; width:130px; height:80px; background:#fff; border:4px solid var(--ink);
+    border-radius:22px; display:flex; align-items:center; justify-content:center; gap:7px;
+    animation: wobble-x 3s ease-in-out infinite; transform:translateX(-50%);
+  }
+  .bubble::after{ content:""; position:absolute; bottom:-16px; left:34px; width:0; height:0; border-left:12px solid transparent; border-right:12px solid transparent; border-top:18px solid #fff; }
+  .bubble .dot{ width:11px; height:11px; border-radius:50%; background:var(--ink); }
+  @keyframes wobble-x{ 0%,100%{ transform:translateX(-50%) rotate(-4deg);} 50%{ transform:translateX(-50%) rotate(4deg);} }
+
+  .bike{ position:absolute; left:50%; bottom:10%; transform:translateX(-50%); width:140px; height:70px; }
+  .bike .wheel{ position:absolute; bottom:0; width:52px; height:52px; border-radius:50%; border:5px solid var(--ink); animation: spin 2.4s linear infinite; }
+  .bike .wheel::after{ content:""; position:absolute; inset:11px; border-radius:50%; border:2px solid var(--ink); }
+  .bike .wheel.l{ left:0; } .bike .wheel.r{ right:0; }
+  .bike .bar1{ position:absolute; left:24px; bottom:24px; width:60px; height:5px; background:var(--ink); transform-origin:left center; transform:rotate(-18deg); border-radius:3px; }
+  .bike .bar2{ position:absolute; left:60px; bottom:5px; width:52px; height:5px; background:var(--ink); transform-origin:left center; transform:rotate(35deg); border-radius:3px; }
+  .bike .seat{ position:absolute; left:20px; bottom:46px; width:18px; height:7px; background:var(--ink); border-radius:4px; }
+
+  /* ---- custom cursor w/ blinking eyes ---- */
+  #cursor{
+    position:fixed; top:0; left:0; width:64px; height:64px; border-radius:50%; z-index:9999;
+    pointer-events:none; background:#fff8ec; border:3px solid var(--ink); box-shadow:0 8px 18px rgba(0,0,0,0.3);
+    overflow:hidden; opacity:0; transition:opacity 160ms ease;
+  }
+  #cursor.visible{ opacity:1; }
+  .cf-eye{ position:absolute; width:8px; height:8px; border-radius:50%; background:var(--ink); top:22px; transition: height 80ms ease; }
+  .cf-eye-l{ left:17px; } .cf-eye-r{ right:17px; }
+  .cf-eye.blink{ height:1.5px; }
+  .cf-mouth{ position:absolute; bottom:15px; left:50%; width:22px; height:11px; border:3px solid var(--ink); border-top:none; border-radius:0 0 20px 20px; transform:translateX(-50%); }
+
+  @media (prefers-reduced-motion: reduce){
+    .bubble, .bike .wheel, .doodle-star{ animation:none !important; }
+  }
+</style>
+</head>
+<body>
+
+  <div id="intro">
+    <h1>Preview: mask / offset / zoom transition</h1>
+    <p>2/3-width panel, dark void on the right holding the "next" dot. Content dims → panel shrinks to a dot → it exits through the void → the resting dot crosses into the panel and grows to reveal the new colour → content staggers in. 15s timer runs for real, or press → to skip ahead.</p>
+    <button id="playBtn">Play</button>
+    <button id="replayBtn" style="display:none;">Replay</button>
+  </div>
+
+  <div id="void-panel"></div>
+
+  <div class="progress-track"><div class="progress-fill" id="fill"></div></div>
+  <div class="progress-ball" id="progressBall"></div>
+  <div class="counter" id="counter">1 / 10</div>
+  <div class="pause-badge" id="pauseBadge">Paused</div>
+  <div class="shortcut-hint">space pause · ←/→ navigate</div>
+
+  <div id="stage">
+    <section class="slide dark active" id="s0">
+      <div class="content">
+        <div class="seed-pill"></div>
+        <div class="photo-slot" style="top:8%; right:7%;">
+          <div class="photo"><div class="photo-pic"><img src="images/01-1.jpg" alt="" onerror="this.style.display='none'"><div class="pic-sun"></div><div class="pic-hill"></div></div><div class="photo-label">01-1.jpg</div></div>
+        </div>
+        <h2 class="headline">It&rsquo;s pronounced<br>Peco</h2>
+        <div class="doodle-layer">
+          <div class="bubble"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
+          <div class="doodle-star" style="top:60%; left:8%;">★</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide light" id="s1">
+      <div class="content">
+        <div class="seed-pill"></div>
+        <div class="photo-slot" style="top:7%; left:7%;">
+          <div class="photo"><div class="photo-pic"><img src="images/02-1.jpg" alt="" onerror="this.style.display='none'"><div class="pic-sun"></div><div class="pic-hill"></div></div><div class="photo-label">02-1.jpg</div></div>
+        </div>
+        <h2 class="headline">Grew up near<br>Oxford</h2>
+        <div class="doodle-layer">
+          <div class="bike"><div class="wheel l"></div><div class="wheel r"></div><div class="bar1"></div><div class="bar2"></div><div class="seat"></div></div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <div id="travel-layer"></div>
+  <div id="pan-layer"></div>
+
+  <div id="cursor">
+    <div class="cf-eye cf-eye-l"></div>
+    <div class="cf-eye cf-eye-r"></div>
+    <div class="cf-mouth"></div>
+  </div>
+
+<script>
+(function(){
+  "use strict";
+  var reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  var SLIDE_DURATION = 15000;
+  var FADE_OUT = 220;
+  var SHRINK = 600;
+  var PAN_DURATION = 450;
+  var REFILL_DURATION = 450;
+  var GROW = 1000;
+  var STAGGER_LEAD = 350; // content fade starts this many ms before GROW completes
+
+  var PANEL_CENTER_VW = 100 / 3;          // 33.333 — center of the 2/3 panel
+  var VOID_CENTER_VW = 100 - (100 / 6);   // 83.333 — center of the 1/3 void
+  var PAN_SHIFT_VW = VOID_CENTER_VW - PANEL_CENTER_VW; // 50 — distance the page pans left
+  var REFILL_START_VW = 120;              // new void dot slides in from off past the right edge
+
+  var PALETTE = ["#ff5d5d", "#ffc53d"];
+
+  var intro = document.getElementById("intro");
+  var playBtn = document.getElementById("playBtn");
+  var replayBtn = document.getElementById("replayBtn");
+  var slideEls = [document.getElementById("s0"), document.getElementById("s1")];
+  var voidPanel = document.getElementById("void-panel");
+  var travelLayer = document.getElementById("travel-layer");
+  var panLayer = document.getElementById("pan-layer");
+  var fill = document.getElementById("fill");
+  var progressBall = document.getElementById("progressBall");
+  var counterEl = document.getElementById("counter");
+  var cursorEl = document.getElementById("cursor");
+  var eyeL = document.querySelector(".cf-eye-l");
+  var eyeR = document.querySelector(".cf-eye-r");
+
+  var currentIndex = 0;
+  var remainingMs = SLIDE_DURATION;
+  var lastFrameTime = null;
+  var rafId = null;
+  var running = false;
+  var paused = false;
+  var transitioning = false;
+  var restingDot = null;
+
+  function updateCounter(){ counterEl.textContent = (currentIndex + 1) + " / 10"; }
+  function updateProgress(){
+    var pct = Math.max(0, Math.min(1, 1 - remainingMs / SLIDE_DURATION));
+    fill.style.width = (pct * 100) + "%";
+    progressBall.style.left = (pct * 100) + "%";
+    progressBall.style.transform = "translateX(-50%) rotate(" + (pct * 720) + "deg)";
+  }
+  function updatePauseUI(){ document.body.classList.toggle("is-paused", paused); }
+
+  function tick(now){
+    if (lastFrameTime === null) lastFrameTime = now;
+    var dt = now - lastFrameTime;
+    lastFrameTime = now;
+    if (running && !paused && !transitioning){
+      remainingMs -= dt;
+      updateProgress();
+      if (remainingMs <= 0){ goTo(currentIndex === 0 ? 1 : 0); }
+    }
+    rafId = requestAnimationFrame(tick);
+  }
+  function startTimerLoop(){ if (rafId) cancelAnimationFrame(rafId); lastFrameTime = null; rafId = requestAnimationFrame(tick); }
+
+  function makeRestingDot(color){
+    var d = document.createElement("div");
+    d.className = "resting-dot";
+    d.style.background = color;
+    d.style.opacity = "0";
+    voidPanel.appendChild(d);
+    requestAnimationFrame(function(){ d.style.opacity = "1"; });
+    return d;
+  }
+
+  function makeDot(parent, color, leftVw){
+    var d = document.createElement("div");
+    d.className = "travel-dot";
+    d.style.background = color;
+    d.style.border = "3px solid var(--ink)";
+    d.style.left = leftVw + "vw";
+    d.style.transform = "translateX(-50%)";
+    parent.appendChild(d);
+    return d;
+  }
+
+  function goTo(nextIndex){
+    if (transitioning) return;
+    transitioning = true;
+    running = false;
+
+    var fromEl = slideEls[currentIndex];
+    var toEl = slideEls[nextIndex];
+    var fromContent = fromEl.querySelector(".content");
+    var toContent = toEl.querySelector(".content");
+    var fromColor = PALETTE[currentIndex];
+
+    if (reducedMotion){
+      fromEl.style.transition = "opacity 260ms ease";
+      fromEl.style.opacity = "0";
+      toEl.classList.add("active");
+      toEl.style.opacity = "0";
+      requestAnimationFrame(function(){ toEl.style.transition = "opacity 260ms ease"; toEl.style.opacity = "1"; });
+      setTimeout(function(){
+        fromEl.classList.remove("active");
+        fromEl.style.transition = ""; fromEl.style.opacity = "";
+        toEl.style.transition = ""; toEl.style.opacity = "";
+        toContent.classList.add("in");
+        currentIndex = nextIndex;
+        updateCounter(); updateProgress();
+        remainingMs = SLIDE_DURATION; running = true; transitioning = false;
+        startTimerLoop();
+      }, 280);
+      return;
+    }
+
+    /* 1: dim current content */
+    fromContent.style.transition = "opacity " + FADE_OUT + "ms ease";
+    fromContent.style.opacity = "0.3";
+
+    setTimeout(function(){
+      /* 2: shrink current panel to a dot, centred in the panel, via clip-path */
+      fromEl.style.transition = "clip-path " + SHRINK + "ms cubic-bezier(0.64,0,0.78,0)";
+      fromEl.style.clipPath = "circle(20px at 50% 50%)";
+
+      setTimeout(function(){
+        fromEl.classList.remove("active");
+        fromEl.style.transition = ""; fromEl.style.clipPath = "";
+        fromContent.style.transition = ""; fromContent.style.opacity = "";
+        fromContent.classList.remove("in");
+
+        /* 3: one camera pan left. The just-minimised dot and the dot already
+           resting in the void both live in #pan-layer and move together by
+           the same amount, so the resting dot ends up exactly where the
+           minimised one was, and the minimised one carries on off-screen left. */
+        var oldDot = makeDot(panLayer, fromColor, PANEL_CENTER_VW);
+        var arrivingDot = restingDot;
+        if (arrivingDot && arrivingDot.parentNode) arrivingDot.parentNode.removeChild(arrivingDot);
+        arrivingDot.style.position = "fixed";
+        arrivingDot.style.left = VOID_CENTER_VW + "vw";
+        arrivingDot.style.transform = "none";
+        panLayer.appendChild(arrivingDot);
+        restingDot = null;
+
+        panLayer.style.transition = "none";
+        panLayer.style.transform = "translateX(0)";
+        void panLayer.offsetHeight;
+        panLayer.style.transition = "transform " + PAN_DURATION + "ms linear";
+        panLayer.style.transform = "translateX(-" + PAN_SHIFT_VW + "vw)";
+
+        /* meanwhile, a fresh dot (previewing whatever comes after the next
+           slide) slides in from off-screen right to refill the void */
+        var refillColor = PALETTE[nextIndex === 0 ? 1 : 0];
+        var refillDot = makeDot(voidPanel, refillColor, REFILL_START_VW);
+        requestAnimationFrame(function(){
+          refillDot.style.transition = "left " + REFILL_DURATION + "ms linear";
+          refillDot.style.left = VOID_CENTER_VW + "vw";
+        });
+
+        setTimeout(function(){
+          if (oldDot.parentNode) oldDot.parentNode.removeChild(oldDot);
+          if (arrivingDot.parentNode) arrivingDot.parentNode.removeChild(arrivingDot);
+          panLayer.style.transition = ""; panLayer.style.transform = "";
+          refillDot.style.transition = ""; refillDot.style.left = ""; refillDot.style.transform = "";
+          refillDot.className = "resting-dot";
+          restingDot = refillDot;
+
+          /* 4: grow next panel from that same dot, filling the panel */
+          toEl.style.transition = "none";
+          toEl.style.clipPath = "circle(20px at 50% 50%)";
+          toEl.classList.add("active");
+          toContent.style.opacity = "0.3";
+          void toEl.offsetHeight;
+          toEl.style.transition = "clip-path " + GROW + "ms cubic-bezier(0.64,0,0.78,0)";
+          toEl.style.clipPath = "circle(150vmax at 50% 50%)";
+
+          setTimeout(function(){
+            /* 5: staggered content reveal, overlapping the tail of the grow */
+            toContent.style.transition = "opacity " + GROW + "ms ease";
+            toContent.style.opacity = "1";
+            toContent.classList.add("in");
+          }, Math.max(0, GROW - STAGGER_LEAD));
+
+          setTimeout(function(){
+            toEl.style.transition = ""; toEl.style.clipPath = "circle(150vmax at 50% 50%)";
+            toContent.style.transition = ""; toContent.style.opacity = "";
+
+            currentIndex = nextIndex;
+            remainingMs = SLIDE_DURATION;
+            updateCounter(); updateProgress();
+            running = true; transitioning = false;
+            startTimerLoop();
+          }, GROW + 30);
+        }, PAN_DURATION);
+      }, SHRINK + 20);
+    }, FADE_OUT + 10);
+  }
+
+  function start(){
+    intro.classList.add("hidden");
+    currentIndex = 0;
+    slideEls.forEach(function(el, i){ el.classList.toggle("active", i === 0); el.style.clipPath = ""; });
+    slideEls[0].querySelector(".content").classList.add("in");
+    if (restingDot && restingDot.parentNode) restingDot.parentNode.removeChild(restingDot);
+    restingDot = makeRestingDot(PALETTE[1]);
+    remainingMs = SLIDE_DURATION;
+    running = true; paused = false; transitioning = false;
+    updatePauseUI(); updateCounter(); updateProgress();
+    startTimerLoop();
+  }
+
+  playBtn.addEventListener("click", start);
+  replayBtn.addEventListener("click", function(){ replayBtn.style.display = "none"; playBtn.style.display = "inline-block"; start(); });
+
+  document.addEventListener("keydown", function(e){
+    if (e.code === "Space"){ e.preventDefault(); if (running){ paused = !paused; if (!paused) lastFrameTime = null; updatePauseUI(); } }
+    else if (e.code === "ArrowRight" && running && !transitioning){ e.preventDefault(); goTo(currentIndex === 0 ? 1 : 0); }
+    else if (e.code === "ArrowLeft" && running && !transitioning){ e.preventDefault(); goTo(currentIndex === 0 ? 1 : 0); }
+  });
+
+  /* ---- cursor: follow + blink ---- */
+  var mouseX = window.innerWidth/2, mouseY = window.innerHeight/2, curX = mouseX, curY = mouseY, seen = false;
+  document.addEventListener("mousemove", function(e){
+    mouseX = e.clientX; mouseY = e.clientY;
+    if (!seen){ seen = true; curX = mouseX; curY = mouseY; cursorEl.classList.add("visible"); }
+  });
+  document.addEventListener("mouseleave", function(){ cursorEl.classList.remove("visible"); });
+
+  function cursorLoop(){
+    if (!reducedMotion){ curX += (mouseX-curX)*0.22; curY += (mouseY-curY)*0.22; } else { curX = mouseX; curY = mouseY; }
+    cursorEl.style.transform = "translate3d(" + (curX-32) + "px," + (curY-32) + "px,0)";
+    requestAnimationFrame(cursorLoop);
+  }
+  requestAnimationFrame(cursorLoop);
+
+  function blinkLoop(){
+    var delay = 2200 + Math.random()*2600;
+    setTimeout(function(){
+      eyeL.classList.add("blink"); eyeR.classList.add("blink");
+      setTimeout(function(){ eyeL.classList.remove("blink"); eyeR.classList.remove("blink"); blinkLoop(); }, 110);
+    }, delay);
+  }
+  blinkLoop();
+})();
+</script>
+</body>
+</html>
